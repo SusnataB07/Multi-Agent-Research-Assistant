@@ -47,8 +47,8 @@ You need Python 3.10 or later.
 **1. Clone the repo**
 
 ```bash
-git clone https://github.com/SusnataB07/multi-agent-research-studio.git
-cd multi-agent-research-studio
+git clone https://github.com/SusnataB07/Multi-Agent-Research-Assistant.git
+cd Multi-Agent-Research-Assistant
 ```
 
 **2. Create and activate a virtual environment**
