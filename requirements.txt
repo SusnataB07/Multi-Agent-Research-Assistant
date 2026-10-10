@@ -1,0 +1,16 @@
+# Core
+langchain>=1.0.0
+langchain-core>=1.0.0
+streamlit>=1.40.0
+python-dotenv>=1.0.0
+rich>=13.7.0
+
+# Search + scraping tools
+tavily-python>=0.3.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
+# LLM providers
+langchain-google-genai>=3.0.0   # gemini (free)
+langchain-groq>=1.0.0           # groq (free)
+langchain-mistralai>=1.0.0      # mistral
