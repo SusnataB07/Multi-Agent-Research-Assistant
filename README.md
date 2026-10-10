@@ -2,7 +2,7 @@
 
 Four AI agents turn a question into a sourced research report. One agent searches the web, one reads the best source, one writes the report, and one reviews it. You get the draft, a quality score and every link used, all from a Streamlit interface.
 
-<!-- Add a screenshot of the app here, for example: ![App screenshot](screenshot.png) -->
+![App screenshot](screenshot.png)
 
 ## How it works
 
