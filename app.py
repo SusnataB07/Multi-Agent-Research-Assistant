@@ -39,7 +39,7 @@ PROVIDERS = {
     },
     "groq": {
         "label": "Groq",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
         "env_keys": ("GROQ_API_KEY",),
         "hint": "console.groq.com/keys",
     },

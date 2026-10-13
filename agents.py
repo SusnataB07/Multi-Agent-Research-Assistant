@@ -14,15 +14,15 @@ load_dotenv()
 #
 #   LLM_PROVIDER   default model                 key needed in .env
 #   -------------  ----------------------------  --------------------
-#   gemini         gemini-3.5-flash  (free)      GOOGLE_API_KEY
-#   groq           llama-3.3-70b-versatile (free) GROQ_API_KEY
+#   gemini         gemini-3.5-flash       (free) GOOGLE_API_KEY
+#   groq           openai/gpt-oss-120b    (free) GROQ_API_KEY
 #   mistral        mistral-small-2506            MISTRAL_API_KEY
 #
 # Set LLM_MODEL in .env to override the default model of any provider.
 # ---------------------------------------------------------------------------
 DEFAULT_MODELS = {
     "gemini": "gemini-3.5-flash",
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "openai/gpt-oss-120b",
     "mistral": "mistral-small-2506",
 }
 
