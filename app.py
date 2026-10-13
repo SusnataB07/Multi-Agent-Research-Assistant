@@ -1,6 +1,8 @@
 import html
+import importlib
 import os
 import re
+import sys
 from urllib.parse import urlparse
 
 import streamlit as st
@@ -9,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(
-    page_title="Multi-Agent Research Studio",
+    page_title="Multi-Agent Research Assistant",
     page_icon="🔎",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -27,6 +29,27 @@ EXAMPLES = [
     "How does retrieval-augmented generation work?",
     "Impact of AI on supply chain management",
 ]
+
+PROVIDERS = {
+    "gemini": {
+        "label": "Google Gemini",
+        "model": "gemini-3.5-flash",
+        "env_keys": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        "hint": "aistudio.google.com/apikey",
+    },
+    "groq": {
+        "label": "Groq",
+        "model": "llama-3.3-70b-versatile",
+        "env_keys": ("GROQ_API_KEY",),
+        "hint": "console.groq.com/keys",
+    },
+    "mistral": {
+        "label": "Mistral",
+        "model": "mistral-small-2506",
+        "env_keys": ("MISTRAL_API_KEY",),
+        "hint": "console.mistral.ai",
+    },
+}
 
 # ---------- Styling ----------
 # Neutral surfaces use translucent greys so the design holds up in both
@@ -147,6 +170,7 @@ st.markdown(
     /* Results header + summary strip */
     .result-head {margin: 2.2rem 0 1rem; padding-top: 1.6rem; border-top: 1px solid var(--line);}
     .result-head h2 {font-size: 1.7rem; margin: 0; padding: 0; line-height: 1.2; max-width: 40ch;}
+    .result-head .meta {color: var(--muted); font-size: .9rem; margin-top: .45rem;}
     .summary {
         display: grid; grid-template-columns: auto repeat(3, 1fr);
         border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
@@ -186,12 +210,18 @@ st.markdown(
     .src .d {display: block; font-weight: 600; font-size: .98rem;}
     .src .u {display: block; font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
 
-    /* Sidebar bits */
-    .chip {
-        display: inline-block; padding: .2rem .65rem; border-radius: 999px; font-size: .82rem;
-        font-weight: 600; border: 1px solid var(--line); background: var(--surface);
-    }
+    /* Sidebar */
+    .side-title {font-weight: 700; font-size: 1.2rem; letter-spacing: -0.01em; margin-bottom: 1.2rem;}
+    .side-label {font-size: .85rem; font-weight: 600; color: var(--muted); margin: 1rem 0 .35rem;}
     .side-note {font-size: .85rem; color: var(--muted); line-height: 1.45;}
+    .status {display: flex; align-items: center; gap: .55rem; font-size: .88rem; padding: .3rem 0;}
+    .status .dot {width: 9px; height: 9px; border-radius: 50%; background: #d1495b; flex: none;}
+    .status.ok .dot {background: #2e9e6b;}
+    .status-box {
+        border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+        padding: .5rem .9rem; margin-top: .9rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] details {border-radius: 12px; border-color: var(--line);}
 
     /* Empty state */
     .empty {
@@ -207,7 +237,7 @@ st.markdown(
 st.markdown(
     """
     <div class="masthead">
-        <span class="brand">🔎 Multi-Agent Research Studio</span>
+        <span class="brand">🔎 Multi-Agent Research Assistant</span>
         <h1>Four agents turn a question into a sourced report.</h1>
         <p>One agent searches, one reads the best source, one writes the report,
         and one reviews it. You get the draft, a quality score, and every link used.</p>
@@ -299,22 +329,82 @@ def render_sources(sources: list):
         )
 
 
+def status_row(ok: bool, text: str) -> str:
+    return f'<div class="status {"ok" if ok else ""}"><span class="dot"></span>{html.escape(text)}</div>'
+
+
+def load_pipeline(provider: str, model: str, user_key: str):
+    """Apply the sidebar choices, then (re)load agents.py so the new model is used."""
+    cfg = PROVIDERS[provider]
+    os.environ["LLM_PROVIDER"] = provider
+    os.environ["LLM_MODEL"] = model
+    if user_key:
+        os.environ[cfg["env_keys"][0]] = user_key
+    signature = (provider, model, user_key)
+
+    fresh = "agents" not in sys.modules
+    agents = importlib.import_module("agents")
+    pipeline = importlib.import_module("pipeline")
+    if not fresh and getattr(agents, "_app_signature", None) != signature:
+        agents = importlib.reload(agents)
+        pipeline = importlib.reload(pipeline)
+    agents._app_signature = signature
+    return pipeline.research_pipeline_stream
+
+
 # ---------- Sidebar ----------
 if "history" not in st.session_state:
     st.session_state["history"] = []
+if "env_defaults" not in st.session_state:
+    _p = os.getenv("LLM_PROVIDER", "gemini").lower().strip()
+    st.session_state["env_defaults"] = {
+        "provider": _p if _p in PROVIDERS else "gemini",
+        "model": os.getenv("LLM_MODEL", ""),
+    }
+env_defaults = st.session_state["env_defaults"]
+if "provider" not in st.session_state:
+    st.session_state["provider"] = env_defaults["provider"]
 
 with st.sidebar:
-    st.markdown("### Control panel")
-    provider = os.getenv("LLM_PROVIDER", "gemini").lower()
-    st.markdown(f'<span class="chip">Model: {html.escape(provider)}</span>', unsafe_allow_html=True)
+    st.markdown('<div class="side-title">🔎 Research Assistant</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="side-label">Model provider</div>', unsafe_allow_html=True)
+    provider = st.selectbox(
+        "Model provider", list(PROVIDERS), key="provider",
+        format_func=lambda p: PROVIDERS[p]["label"], label_visibility="collapsed",
+    )
+    cfg = PROVIDERS[provider]
+
+    st.markdown('<div class="side-label">Model</div>', unsafe_allow_html=True)
+    model_key = f"model_{provider}"
+    if model_key not in st.session_state:
+        st.session_state[model_key] = (
+            env_defaults["model"] if provider == env_defaults["provider"] else ""
+        )
+    model = st.text_input(
+        "Model", key=model_key, placeholder=cfg["model"], label_visibility="collapsed",
+        help="Type any model name your provider supports. Leave empty to use the default.",
+    ).strip() or cfg["model"]
+
+    with st.expander("API key (optional)"):
+        user_key = st.text_input(
+            f"{cfg['label']} API key", type="password", key=f"apikey_{provider}",
+            placeholder="Leave empty to use your .env file",
+        ).strip()
+        st.caption(f"Get a key at {cfg['hint']}. It is not saved to disk.")
+
+    llm_ready = bool(user_key) or any(os.getenv(k) for k in cfg["env_keys"])
+    search_ready = bool(os.getenv("TAVILY_API_KEY"))
     st.markdown(
-        '<p class="side-note" style="margin-top:.6rem">Change the provider with '
-        "<code>LLM_PROVIDER</code> in your .env file.</p>",
+        '<div class="status-box">'
+        + status_row(llm_ready, f"{cfg['label']} key " + ("ready" if llm_ready else "missing"))
+        + status_row(search_ready, "Tavily search key " + ("ready" if search_ready else "missing"))
+        + "</div>",
         unsafe_allow_html=True,
     )
 
     st.divider()
-    st.markdown("### Past runs")
+    st.markdown('<div class="side-label" style="margin-top:0">Past runs</div>', unsafe_allow_html=True)
     history = st.session_state["history"]
     if history:
         labels = [f"{i + 1}. {h['topic'][:38]}" for i, h in enumerate(history)]
@@ -365,7 +455,7 @@ else:
 # ---------- Run pipeline ----------
 if run:
     try:
-        from pipeline import research_pipeline_stream
+        research_pipeline_stream = load_pipeline(provider, model, user_key)
     except Exception as e:
         st.error(f"Could not load the pipeline or agents: {e}")
         st.stop()
@@ -388,6 +478,7 @@ if run:
             render_tracker(tracker, states, timings)
         note.empty()
         if final:
+            final["llm"] = f"{cfg['label']} · {model}"
             st.session_state["result"] = final
             st.session_state["history"].append(final)
             st.toast("Research complete", icon="✅")
@@ -398,10 +489,10 @@ if run:
         if "429" in msg or "rate" in msg or "quota" in msg:
             st.warning(
                 "Rate limit or quota hit. Wait a minute and try again, "
-                "or switch provider with `LLM_PROVIDER` in your .env."
+                "or pick another model provider in the sidebar."
             )
         elif "api key" in msg or "api_key" in msg or "401" in msg:
-            st.warning("Check that your API keys are set correctly in the .env file.")
+            st.warning("Check your API key in the sidebar or in the .env file.")
 
 # ---------- Results ----------
 result = st.session_state.get("result")
@@ -409,8 +500,10 @@ if result:
     score = parse_score(result["feedback"])
     sources = extract_sources(result["search_result"], result["report"])
 
+    llm_note = result.get("llm")
+    meta = f'<div class="meta">Generated with {html.escape(llm_note)}</div>' if llm_note else ""
     st.markdown(
-        f'<div class="result-head"><h2>{html.escape(result["topic"])}</h2></div>',
+        f'<div class="result-head"><h2>{html.escape(result["topic"])}</h2>{meta}</div>',
         unsafe_allow_html=True,
     )
     render_summary(result, score, sources)
